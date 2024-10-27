@@ -63,7 +63,9 @@ def get_oauth_router(
             authorize_redirect_url = redirect_url
         else:
             authorize_redirect_url = str(request.url_for(callback_route_name))
-
+        authorize_redirect_url = authorize_redirect_url.replace(
+            "http://blindtest", "https://blindtest"
+        )
         state_data: Dict[str, str] = {}
         state = generate_state_token(state_data, state_secret)
         authorization_url = await oauth_client.get_authorization_url(

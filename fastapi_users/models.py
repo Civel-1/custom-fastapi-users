@@ -7,6 +7,7 @@ class UserProtocol(Protocol[ID]):
     """User protocol that ORM model should follow."""
 
     id: ID
+    user_name: str
     email: str
     hashed_password: str
     is_active: bool

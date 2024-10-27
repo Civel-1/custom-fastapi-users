@@ -66,7 +66,7 @@ def get_auth_router(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=ErrorCode.LOGIN_USER_NOT_VERIFIED,
             )
-        response = await backend.login(strategy, user)
+        response = await backend.login(strategy, user, oauth=False)
         await user_manager.on_after_login(user, request, response)
         return response
 

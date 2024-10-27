@@ -1,3 +1,4 @@
+from random import random
 import uuid
 from typing import Any, Dict, Generic, Optional, Union
 
@@ -70,6 +71,21 @@ class BaseUserManager(Generic[models.UP, models.ID]):
         :return: A user.
         """
         user = await self.user_db.get(id)
+
+        if user is None:
+            raise exceptions.UserNotExists()
+
+        return user
+
+    async def get_by_username(self, username: str) -> models.UP:
+        """
+        Get a user by username.
+
+        :param username: username of the user to retrieve.
+        :raises UserNotExists: The user does not exist.
+        :return: A user.
+        """
+        user = await self.user_db.get_by_username(username)
 
         if user is None:
             raise exceptions.UserNotExists()
@@ -152,6 +168,7 @@ class BaseUserManager(Generic[models.UP, models.ID]):
         access_token: str,
         account_id: str,
         account_email: str,
+        user_name: str,
         expires_at: Optional[int] = None,
         refresh_token: Optional[str] = None,
         request: Optional[Request] = None,
@@ -196,7 +213,7 @@ class BaseUserManager(Generic[models.UP, models.ID]):
             "expires_at": expires_at,
             "refresh_token": refresh_token,
         }
-
+        user_just_created: bool = False
         try:
             user = await self.get_by_oauth_account(oauth_name, account_id)
         except exceptions.UserNotExists:
@@ -209,14 +226,18 @@ class BaseUserManager(Generic[models.UP, models.ID]):
             except exceptions.UserNotExists:
                 # Create account
                 password = self.password_helper.generate()
+                user_name = user_name + str(random.randint(1, 100))
                 user_dict = {
                     "email": account_email,
                     "hashed_password": self.password_helper.hash(password),
                     "is_verified": is_verified_by_default,
+                    "user_name": user_name,
                 }
                 user = await self.user_db.create(user_dict)
                 user = await self.user_db.add_oauth_account(user, oauth_account_dict)
                 await self.on_after_register(user, request)
+                user_just_created = True
+
         else:
             # Update oauth
             for existing_oauth_account in user.oauth_accounts:
@@ -227,8 +248,7 @@ class BaseUserManager(Generic[models.UP, models.ID]):
                     user = await self.user_db.update_oauth_account(
                         user, existing_oauth_account, oauth_account_dict
                     )
-
-        return user
+        return user, user_just_created
 
     async def oauth_associate_callback(
         self: "BaseUserManager[models.UOAP, models.ID]",
@@ -644,12 +664,15 @@ class BaseUserManager(Generic[models.UP, models.ID]):
         :param credentials: The user credentials.
         """
         try:
-            user = await self.get_by_email(credentials.username)
+            user = await self.get_by_username(credentials.username)
         except exceptions.UserNotExists:
-            # Run the hasher to mitigate timing attack
-            # Inspired from Django: https://code.djangoproject.com/ticket/20760
-            self.password_helper.hash(credentials.password)
-            return None
+            try:
+                user = await self.get_by_email(credentials.username)
+            except exceptions.UserNotExists:
+                # Run the hasher to mitigate timing attack
+                # Inspired from Django: https://code.djangoproject.com/ticket/20760
+                self.password_helper.hash(credentials.password)
+                return None
 
         verified, updated_password_hash = self.password_helper.verify_and_update(
             credentials.password, user.hashed_password
